@@ -3,7 +3,7 @@ import pandas as pd
 
 
 def load_dataset(file):
-    """Load CSV or Excel business datasets."""
+    """Load CSV or Excel files."""
 
     filename = file.filename.lower()
 
@@ -14,7 +14,7 @@ def load_dataset(file):
         df = pd.read_excel(file.file)
 
     else:
-        raise ValueError("Only CSV and Excel files are supported.")
+        raise ValueError("Please upload a CSV or Excel file.")
 
     if df.empty:
         raise ValueError("The uploaded dataset is empty.")
@@ -23,9 +23,15 @@ def load_dataset(file):
 
 
 def clean_dataset(df):
-    """Clean missing values and duplicate records."""
+    """Clean the uploaded dataset."""
 
-    df = df.drop_duplicates()
+    # Remove completely empty rows
     df = df.dropna(how="all")
+
+    # Remove duplicate records
+    df = df.drop_duplicates()
+
+    # Remove unnecessary spaces from column names
+    df.columns = df.columns.astype(str).str.strip()
 
     return df
