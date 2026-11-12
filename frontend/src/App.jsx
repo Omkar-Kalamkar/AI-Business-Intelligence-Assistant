@@ -9,7 +9,8 @@ import {
 
 import {
   LayoutDashboard, TrendingUp, ShoppingCart,
-  DollarSign, Users, Upload, BrainCircuit
+  DollarSign, Users, Upload, BrainCircuit,
+  Send, MessageCircle
 } from "lucide-react";
 
 import "./App.css";
@@ -22,6 +23,10 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const fileInput = useRef(null);
+
+  // Chatbot states
+  const [question, setQuestion] = useState("");
+  const [chatHistory, setChatHistory] = useState([]);
 
   const handleUpload = async (event) => {
     const file = event.target.files[0];
@@ -224,12 +229,58 @@ function App() {
                 Duplicate Records: {summary.duplicate_records}
               </p>
 
-              {data.analysis.insights.map((insight, index) => (
+              {(data.analysis.insights || []).map((insight, index) => (
                 <p key={index}>• {insight}</p>
               ))}
             </section>
           </>
         )}
+
+        {/* AI CHATBOT SECTION */}
+        <section className="chatbot-container">
+
+          <h2>
+            <MessageCircle size={22} />
+            AI Business Assistant
+          </h2>
+
+          <div className="chat-history">
+
+            {chatHistory.length === 0 && (
+              <p>Ask me anything about your sales data!</p>
+            )}
+
+            {chatHistory.map((chat, index) => (
+              <div key={index} className="chat-message">
+                <p>
+                  <strong>You:</strong> {chat.question}
+                </p>
+
+                <p>
+                  <strong>AI:</strong> {chat.answer}
+                </p>
+              </div>
+            ))}
+
+          </div>
+
+          <div className="chat-input">
+
+            <input
+              type="text"
+              placeholder="Ask a question about your data..."
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+            />
+
+            <button disabled={!question.trim()}>
+              <Send size={16} />
+              Send
+            </button>
+
+          </div>
+
+        </section>
 
       </main>
     </div>
