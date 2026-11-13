@@ -23,6 +23,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const fileInput = useRef(null);
+  const [chatLoading, setChatLoading] = useState(false);
 
   // Chatbot states
   const [question, setQuestion] = useState("");
@@ -38,6 +39,8 @@ function App() {
 
     const formData = new FormData();
     formData.append("file", file);
+
+    
 
     try {
       const response = await axios.post(
@@ -55,7 +58,47 @@ function App() {
       event.target.value = "";
     }
   };
+  const handleAsk = async () => {
+  const userQuestion = question.trim();
 
+  if (!userQuestion || chatLoading) return;
+
+  if (!data) {
+    setError("Please upload a dataset first.");
+    return;
+  }
+
+  setError("");
+  setChatLoading(true);
+  setQuestion("");
+
+  try {
+    const response = await axios.post(`${API_URL}/ask`, {
+      question: userQuestion,
+    });
+
+    setChatHistory((prev) => [
+      ...prev,
+      {
+        question: userQuestion,
+        answer: response.data.answer,
+      },
+    ]);
+  } catch (err) {
+    const message =
+      err.response?.data?.detail || "Unable to get an answer.";
+
+    setChatHistory((prev) => [
+      ...prev,
+      {
+        question: userQuestion,
+        answer: message,
+      },
+    ]);
+  } finally {
+    setChatLoading(false);
+  }
+};
   const summary = data?.analysis?.summary;
   const productData = data?.analysis?.product_data || [];
   const regionData = data?.analysis?.region_data || [];
@@ -273,9 +316,12 @@ function App() {
               onChange={(e) => setQuestion(e.target.value)}
             />
 
-            <button disabled={!question.trim()}>
+            <button 
+              onClick={handleAsk}
+              disabled={!question.trim() || chatLoading}
+            >
               <Send size={16} />
-              Send
+              {chatLoading ? "Thinking..." : "Send"}
             </button>
 
           </div>
