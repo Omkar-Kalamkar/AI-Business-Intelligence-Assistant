@@ -274,4 +274,31 @@ body {
   cursor: not-allowed;
 }
 
+
+/* AI Business Recommendations */
+.recommendations-container {
+  background: white;
+  padding: 25px;
+  margin-top: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.recommendations-container h2 {
+  color: #1e293b;
+  margin-bottom: 18px;
+  text-align: center;
+}
+
+.recommendations-container ul {
+  padding-left: 25px;
+}
+
+.recommendations-container li {
+  color: #334155;
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+
 }
