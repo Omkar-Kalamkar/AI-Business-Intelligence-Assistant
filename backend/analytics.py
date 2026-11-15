@@ -185,3 +185,74 @@ def generate_analysis(df):
         "insights": insights,
         "recommendations": recommendations
     }
+
+
+def compare_sales(df, dimension, item1, item2):
+
+    # Identify dataset columns
+    column_lookup = {
+        str(column).strip().lower(): column
+        for column in df.columns
+    }
+
+    sales_col = (
+        column_lookup.get("sales")
+        or column_lookup.get("revenue")
+    )
+
+    dimension_col = column_lookup.get(dimension.lower())
+
+    if not sales_col:
+        raise ValueError("Sales or Revenue column not found.")
+
+    if not dimension_col:
+        raise ValueError(
+            f"{dimension.capitalize()} column not found."
+        )
+
+    # Calculate sales for the first selection
+    first_data = df[
+        df[dimension_col].astype(str).str.lower()
+        == item1.strip().lower()
+    ]
+
+    # Calculate sales for the second selection
+    second_data = df[
+        df[dimension_col].astype(str).str.lower()
+        == item2.strip().lower()
+    ]
+
+    if first_data.empty:
+        raise ValueError(f"{item1} was not found in the dataset.")
+
+    if second_data.empty:
+        raise ValueError(f"{item2} was not found in the dataset.")
+
+    first_sales = float(first_data[sales_col].sum())
+    second_sales = float(second_data[sales_col].sum())
+
+    difference = abs(first_sales - second_sales)
+
+    if first_sales > second_sales:
+        winner = item1
+    elif second_sales > first_sales:
+        winner = item2
+    else:
+        winner = "Both are equal"
+
+    return {
+        "dimension": dimension,
+        "comparison": [
+            {
+                "name": item1,
+                "sales": first_sales
+            },
+            {
+                "name": item2,
+                "sales": second_sales
+            }
+        ],
+        "difference": difference,
+        "higher_performer": winner
+    }
+

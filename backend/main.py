@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, UploadFile, File, HTTPException
 
 from data_processing import load_dataset, clean_dataset
-from analytics import generate_analysis
+from analytics import generate_analysis, compare_sales
 
 import json
 
@@ -30,6 +30,11 @@ current_df = None
 
 class ChatRequest(BaseModel):
     question: str
+
+class CompareRequest(BaseModel):
+    dimension: str
+    item1: str
+    item2: str
 
 
 @app.get("/")
@@ -109,3 +114,41 @@ async def ask_question(request: ChatRequest):
             status_code=500,
             detail=str(e)
         )
+
+
+@app.post("/compare")
+async def compare_dataset(request: CompareRequest):
+
+    if current_df is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Please upload a dataset first."
+        )
+
+    try:
+        if request.dimension.lower() not in ["product", "region"]:
+            raise ValueError(
+                "Dimension must be either product or region."
+            )
+
+        result = compare_sales(
+            current_df,
+            request.dimension,
+            request.item1,
+            request.item2
+        )
+
+        return result
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
