@@ -48,6 +48,20 @@ function App() {
 
   const fileInput = useRef(null);
 
+  const [question, setQuestion] = useState("");
+  const [chatHistory, setChatHistory] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
+
+
+  // Sales comparison states
+  const [dimension, setDimension] = useState("product");
+  const [item1, setItem1] = useState("");
+  const [item2, setItem2] = useState("");
+  const [comparison, setComparison] = useState(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareError, setCompareError] = useState("");
+
+
   // Chatbot states
   const [question, setQuestion] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
@@ -557,6 +571,52 @@ function App() {
 
   );
 }
+
+
+  // Compare two products or regions
+  const handleCompare = async () => {
+    if (!data) {
+      setCompareError("Please upload a dataset first.");
+      return;
+    }
+
+    if (!item1 || !item2) {
+      setCompareError("Please select both items.");
+      return;
+    }
+
+    if (item1 === item2) {
+      setCompareError("Please select two different items.");
+      return;
+    }
+
+    setCompareLoading(true);
+    setCompareError("");
+    setComparison(null);
+
+    try {
+      const response = await axios.post(
+        `${API_URL}/compare`,
+        {
+          dimension: dimension,
+          item1: item1,
+          item2: item2
+        }
+      );
+
+      setComparison(response.data);
+
+    } catch (err) {
+      setCompareError(
+        err.response?.data?.detail ||
+        "Unable to compare sales."
+      );
+
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
 
 
 // KPI CARD COMPONENT
