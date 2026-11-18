@@ -325,4 +325,41 @@ body {
   line-height: 1.6;
   color: #334155;
 }
+
+
+/* DATASET PREVIEW TABLE */
+.dataset-preview {
+  margin-top: 20px;
+}
+
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 15px;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 650px;
+}
+
+.preview-table th,
+.preview-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.preview-table th {
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 600;
+}
+
+.preview-table tbody tr:hover {
+  background: #f8fafc;
+}
+
 }

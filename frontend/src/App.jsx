@@ -204,6 +204,18 @@ function App() {
   const regionData =
     data?.analysis?.region_data || [];
 
+  
+// Dataset preview
+  const previewData = data?.preview || [];
+  // Dataset search
+  const [previewSearch, setPreviewSearch] = useState("");
+  
+  const previewColumns =
+    previewData.length > 0
+      ? Object.keys(previewData[0])
+      : [];
+
+
   // Currency formatter
   const money = (value) =>
     new Intl.NumberFormat("en-IN", {
@@ -465,6 +477,42 @@ function App() {
             </section>
           </>
         )}
+
+
+{/* DATASET PREVIEW */}
+<section className="chart-card dataset-preview">
+  <h2>Dataset Preview</h2>
+  <p>
+    Showing the first {previewData.length} records from {data.filename}.
+  </p>
+
+  {previewData.length > 0 ? (
+    <div className="table-wrapper">
+      <table className="preview-table">
+        <thead>
+          <tr>
+            {previewColumns.map((column) => (
+              <th key={column}>{column}</th>
+            ))}
+          </tr>
+        </thead>
+
+        <tbody>
+          {previewData.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {previewColumns.map((column) => (
+                <td key={column}>{row[column] ?? "—"}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ) : (
+    <p>No preview data available.</p>
+  )}
+</section>
+
 
         {/* DATASET COMPARISON SECTION */}
         <section className="comparison-container">
