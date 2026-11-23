@@ -153,7 +153,9 @@ body {
     align-items: flex-start;
     flex-direction: column;
   }
-  .navbar h1 {
+}
+
+.navbar h1 {
   color: #1e293b;
 }
 
@@ -362,4 +364,517 @@ body {
   background: #f8fafc;
 }
 
+
+/* BUSINESS INSIGHTS */
+
+.business-insights {
+  margin-top: 30px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.section-header h2 {
+  color: #1e293b;
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.insight-panel {
+  margin-bottom: 22px;
+}
+
+.insight-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #1e293b;
+}
+
+.insight-panel h3 svg {
+  color: #4f46e5;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.panel-header select {
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: white;
+  color: #334155;
+  outline: none;
+}
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+}
+
+.insights-grid .insight-panel {
+  margin-bottom: 22px;
+  min-width: 0;
+}
+
+.muted-note {
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.success-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #047857;
+  background: #d1fae5;
+  padding: 12px 14px;
+  border-radius: 8px;
+}
+
+.secondary-button {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.secondary-button:hover {
+  background: #e0e7ff;
+}
+
+/* SEVERITY BADGES */
+
+.severity-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.severity-critical {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.severity-high {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.severity-medium,
+.severity-warning {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.severity-low {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.severity-summary {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 15px;
+}
+
+.severity-chip {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.anomaly-table td {
+  white-space: normal;
+  vertical-align: top;
+}
+
+.flagged-value {
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+/* KPI ALERTS */
+
+.alert-count {
+  background: #dc2626;
+  color: white;
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 2px 9px;
+  margin-left: 6px;
+}
+
+.review-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.alerts-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 15px;
+}
+
+.alert-card {
+  border: 1px solid #e2e8f0;
+  border-left-width: 5px;
+  border-radius: 10px;
+  padding: 15px;
+  background: #f8fafc;
+}
+
+.alert-card.alert-critical {
+  border-left-color: #dc2626;
+}
+
+.alert-card.alert-warning {
+  border-left-color: #d97706;
+}
+
+.alert-card.reviewed {
+  opacity: 0.6;
+}
+
+.alert-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.alert-direction {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.alert-message {
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.alert-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: #64748b;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.alert-figures strong {
+  color: #1e293b;
+}
+
+.review-button {
+  background: white;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.review-button:hover {
+  background: #eef2ff;
+  border-color: #4f46e5;
+  color: #4f46e5;
+}
+
+.alert-bell {
+  position: relative;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 11px;
+  cursor: pointer;
+  color: #4f46e5;
+  display: flex;
+  align-items: center;
+}
+
+.alert-bell-count {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  background: #dc2626;
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 6px;
+}
+
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* ROOT CAUSE */
+
+.period-summary {
+  display: flex;
+  gap: 30px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  padding: 15px;
+  background: #f8fafc;
+  border-radius: 10px;
+}
+
+.period-summary strong {
+  font-size: 18px;
+  color: #1e293b;
+}
+
+.change-positive {
+  color: #047857 !important;
+}
+
+.change-negative {
+  color: #b91c1c !important;
+}
+
+.dimension-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.tab {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.tab.active {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: white;
+}
+
+.analysis-summary {
+  margin-top: 15px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
+/* RECOMMENDATIONS */
+
+.recommendation-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 15px;
+}
+
+.recommendation-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.recommendation-card.priority-high {
+  border-left: 5px solid #dc2626;
+}
+
+.recommendation-card.priority-medium {
+  border-left: 5px solid #d97706;
+}
+
+.recommendation-card.priority-low {
+  border-left: 5px solid #10b981;
+}
+
+.recommendation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.recommendation-header h4 {
+  color: #1e293b;
+  font-size: 15px;
+}
+
+.priority-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.priority-badge.priority-high {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.priority-badge.priority-medium {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.priority-badge.priority-low {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.recommendation-card p {
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.recommendation-reason {
+  color: #64748b !important;
+  font-size: 13px !important;
+}
+
+.evidence-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.evidence-chip {
+  background: #eef2ff;
+  color: #3730a3;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+/* INSIGHT HISTORY */
+
+.history-panel {
+  margin-top: 25px;
+}
+
+.history-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.icon-button {
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 9px;
+  cursor: pointer;
+  color: #4f46e5;
+  display: flex;
+  align-items: center;
+}
+
+.icon-button:hover {
+  background: #eef2ff;
+}
+
+.icon-button.danger {
+  color: #b91c1c;
+}
+
+.icon-button.danger:hover {
+  background: #fee2e2;
+}
+
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.row-selected {
+  background: #eef2ff;
+}
+
+.history-snapshot {
+  margin-top: 20px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 18px;
+}
+
+.history-snapshot h4 {
+  color: #1e293b;
+  margin-bottom: 15px;
+}
+
+.history-snapshot .business-insights {
+  margin-top: 0;
+}
+
+.snapshot-insights {
+  padding-left: 25px;
+  color: #334155;
+  line-height: 1.8;
+}
+
+@media (max-width: 1000px) {
+  .insights-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 650px) {
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .period-summary {
+    gap: 18px;
+  }
+
+  .recommendation-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .alerts-list {
+    grid-template-columns: 1fr;
+  }
 }

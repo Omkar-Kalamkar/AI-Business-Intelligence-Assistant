@@ -1,6 +1,5 @@
 
-import React, { useState, useRef } from "react";
-import axios from "axios";
+import { useState, useRef } from "react";
 
 import {
   BarChart,
@@ -24,12 +23,18 @@ import {
   Upload,
   BrainCircuit,
   Send,
-  MessageCircle
+  MessageCircle,
+  Lightbulb,
+  History,
+  Bell
 } from "lucide-react";
 
-import "./App.css";
+import { api } from "./api";
+import { money } from "./format";
+import BusinessInsights from "./components/BusinessInsights";
+import HistoryPanel from "./components/HistoryPanel";
 
-const API_URL = "http://127.0.0.1:8000";
+import "./App.css";
 
 const COLORS = [
   "#6366f1",
@@ -47,6 +52,11 @@ function App() {
 
   const fileInput = useRef(null);
 
+  // Business insights states
+  const [insights, setInsights] = useState(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [activeNav, setActiveNav] = useState("dashboard");
+
   // Chatbot states
   const [question, setQuestion] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
@@ -58,6 +68,36 @@ function App() {
   const [item2, setItem2] = useState("Laptop");
   const [comparison, setComparison] = useState(null);
   const [compareLoading, setCompareLoading] = useState(false);
+
+  const scrollToSection = (id, navKey) => {
+    setActiveNav(navKey);
+
+    if (id === "top") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    document
+      .getElementById(id)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  // Fetch advanced business insights
+  const fetchInsights = async () => {
+    setInsightsLoading(true);
+
+    try {
+      const response = await api.get("/insights");
+      setInsights(response.data);
+    } catch (err) {
+      setError(
+        err.response?.data?.detail ||
+        "Unable to generate business insights."
+      );
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
 
   // Upload dataset
   const handleUpload = async (event) => {
@@ -72,8 +112,8 @@ function App() {
     formData.append("file", file);
 
     try {
-      const response = await axios.post(
-        `${API_URL}/upload`,
+      const response = await api.post(
+        "/upload",
         formData
       );
 
@@ -83,6 +123,9 @@ function App() {
       setChatHistory([]);
       setQuestion("");
       setComparison(null);
+      setInsights(null);
+
+      await fetchInsights();
 
     } catch (err) {
       setError(
@@ -112,8 +155,8 @@ function App() {
     setQuestion("");
 
     try {
-      const response = await axios.post(
-        `${API_URL}/ask`,
+      const response = await api.post(
+        "/ask",
         {
           question: userQuestion
         }
@@ -170,8 +213,8 @@ function App() {
     setComparison(null);
 
     try {
-      const response = await axios.post(
-        `${API_URL}/compare`,
+      const response = await api.post(
+        "/compare",
         {
           dimension: dimension,
           item1: item1.trim(),
@@ -207,22 +250,13 @@ function App() {
   
 // Dataset preview
   const previewData = data?.preview || [];
-  // Dataset search
-  const [previewSearch, setPreviewSearch] = useState("");
-  
+
   const previewColumns =
     previewData.length > 0
       ? Object.keys(previewData[0])
       : [];
 
-
-  // Currency formatter
-  const money = (value) =>
-    new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0
-    }).format(value || 0);
+  const alertCount = insights?.kpi_alerts?.alerts?.length || 0;
 
   return (
     <div className="dashboard">
@@ -236,9 +270,32 @@ function App() {
         </h2>
 
         <nav>
-          <p className="active">
+          <p
+            className={activeNav === "dashboard" ? "active" : ""}
+            onClick={() => scrollToSection("top", "dashboard")}
+          >
             <LayoutDashboard />
             Dashboard
+          </p>
+
+          <p
+            className={activeNav === "insights" ? "active" : ""}
+            onClick={() =>
+              scrollToSection("business-insights", "insights")
+            }
+          >
+            <Lightbulb />
+            Business Insights
+          </p>
+
+          <p
+            className={activeNav === "history" ? "active" : ""}
+            onClick={() =>
+              scrollToSection("insight-history", "history")
+            }
+          >
+            <History />
+            Insight History
           </p>
 
           <p>
@@ -283,7 +340,7 @@ function App() {
             )}
           </div>
 
-          <div>
+          <div className="navbar-actions">
             <input
               type="file"
               accept=".csv,.xlsx,.xls"
@@ -291,6 +348,21 @@ function App() {
               onChange={handleUpload}
               hidden
             />
+
+            {alertCount > 0 && (
+              <button
+                className="alert-bell"
+                title={`${alertCount} KPI alert(s) — click to review`}
+                onClick={() =>
+                  scrollToSection("kpi-alerts", "insights")
+                }
+              >
+                <Bell size={20} />
+                <span className="alert-bell-count">
+                  {alertCount}
+                </span>
+              </button>
+            )}
 
             <button
               className="upload-button"
@@ -475,11 +547,25 @@ function App() {
               )}
 
             </section>
+
+            {/* ADVANCED BUSINESS INSIGHTS */}
+            {insightsLoading && (
+              <p className="muted-note">
+                Detecting anomalies and generating insights...
+              </p>
+            )}
+
+            <BusinessInsights
+              insights={insights}
+              onRefresh={fetchInsights}
+              refreshing={insightsLoading}
+            />
           </>
         )}
 
 
 {/* DATASET PREVIEW */}
+{data && (
 <section className="chart-card dataset-preview">
   <h2>Dataset Preview</h2>
   <p>
@@ -512,6 +598,7 @@ function App() {
     <p>No preview data available.</p>
   )}
 </section>
+)}
 
 
         {/* DATASET COMPARISON SECTION */}
@@ -655,6 +742,9 @@ function App() {
           </div>
 
         </section>
+
+        {/* INSIGHT HISTORY */}
+        <HistoryPanel />
 
       </main>
     </div>

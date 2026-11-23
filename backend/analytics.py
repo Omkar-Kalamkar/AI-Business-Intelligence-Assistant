@@ -4,10 +4,6 @@ import pandas as pd
 
 def generate_analysis(df):
 
-    numeric_columns = df.select_dtypes(
-        include="number"
-    ).columns.tolist()
-
     # Identify columns without depending on capitalization
     column_lookup = {
         str(column).strip().lower(): column
@@ -19,6 +15,15 @@ def generate_analysis(df):
     quantity_col = column_lookup.get("quantity")
     product_col = column_lookup.get("product")
     region_col = column_lookup.get("region")
+
+    df = df.copy()
+    for column in (sales_col, profit_col, quantity_col):
+        if column is not None:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
+
+    numeric_columns = df.select_dtypes(
+        include="number"
+    ).columns.tolist()
 
     # Summary
     summary = {
@@ -228,8 +233,12 @@ def compare_sales(df, dimension, item1, item2):
     if second_data.empty:
         raise ValueError(f"{item2} was not found in the dataset.")
 
-    first_sales = float(first_data[sales_col].sum())
-    second_sales = float(second_data[sales_col].sum())
+    first_sales = float(
+        pd.to_numeric(first_data[sales_col], errors="coerce").sum()
+    )
+    second_sales = float(
+        pd.to_numeric(second_data[sales_col], errors="coerce").sum()
+    )
 
     difference = abs(first_sales - second_sales)
 

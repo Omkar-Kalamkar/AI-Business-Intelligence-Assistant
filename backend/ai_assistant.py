@@ -1,7 +1,102 @@
+import pandas as pd
 
-def answer_question(df, question):
+
+def _answer_from_insights(question, insights):
+    if any(word in question for word in [
+        "anomal", "unusual", "outlier", "abnormal"
+    ]):
+        anomalies = insights.get("anomalies") or {}
+        trends = insights.get("trends") or {}
+
+        if not anomalies.get("available"):
+            return (
+                "Anomaly detection is not available for this dataset. "
+                + anomalies.get("message", "")
+            )
+
+        parts = [
+            f"{anomalies['anomaly_count']} unusual record(s) were "
+            f"detected out of {anomalies['total_records']} rows."
+        ]
+
+        if anomalies.get("severity_counts"):
+            counts = ", ".join(
+                f"{count} {severity}"
+                for severity, count in anomalies["severity_counts"].items()
+            )
+            parts.append(f"Severity breakdown: {counts}.")
+
+        if anomalies["anomalies"]:
+            worst = anomalies["anomalies"][0]
+            if worst["flagged_columns"]:
+                flag = worst["flagged_columns"][0]
+                parts.append(
+                    f"The strongest deviation is row {worst['row_index']}: "
+                    f"{flag['column']} = {flag['value']} "
+                    f"(typical value {flag['expected_median']})."
+                )
+
+        if trends.get("available") and trends.get("anomaly_count"):
+            parts.append(
+                f"{trends['anomaly_count']} unusual sales period(s) "
+                f"were also detected."
+            )
+
+        return " ".join(parts)
+
+    if "alert" in question or "warning" in question:
+        alerts = insights.get("kpi_alerts") or {}
+
+        if not alerts.get("available"):
+            return "KPI alerts are not available for this dataset."
+
+        if not alerts.get("alerts"):
+            return "No significant KPI changes were detected."
+
+        lines = [
+            f"{len(alerts['alerts'])} KPI alert(s):"
+        ]
+        for alert in alerts["alerts"][:5]:
+            lines.append(f"- [{alert['severity']}] {alert['message']}")
+
+        return "\n".join(lines)
+
+    if "recommend" in question or "suggestion" in question:
+        recommendations = insights.get("recommendations") or []
+
+        if not recommendations:
+            return "No recommendations have been generated yet."
+
+        lines = ["Top recommendations:"]
+        for item in recommendations[:3]:
+            lines.append(
+                f"- {item['title']}: {item['recommendation']} "
+                f"(Reason: {item['reason']})"
+            )
+
+        return "\n".join(lines)
+
+    if "root cause" in question or "why" in question:
+        root_cause = insights.get("root_cause") or {}
+
+        if not root_cause.get("available"):
+            return (
+                "Root cause analysis is not available for this dataset."
+            )
+
+        return root_cause.get("summary", "No root cause summary.")
+
+    return None
+
+
+def answer_question(df, question, insights=None):
 
     question = question.lower().strip()
+
+    if insights:
+        insight_answer = _answer_from_insights(question, insights)
+        if insight_answer is not None:
+            return insight_answer
 
     # Identify available columns
     columns = {
@@ -14,6 +109,11 @@ def answer_question(df, question):
     quantity_col = columns.get("quantity")
     product_col = columns.get("product")
     region_col = columns.get("region")
+
+    df = df.copy()
+    for column in (sales_col, profit_col, quantity_col):
+        if column is not None:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
 
     # Total sales
     if any(word in question for word in [
