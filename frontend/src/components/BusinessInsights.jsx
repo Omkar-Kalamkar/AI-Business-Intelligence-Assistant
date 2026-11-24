@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 
 import AlertsPanel from "./AlertsPanel";
 import AnomalyPanel from "./AnomalyPanel";
@@ -11,7 +11,9 @@ export default function BusinessInsights({
   insights,
   onRefresh,
   refreshing = false,
-  showRefresh = true
+  showRefresh = true,
+  onDownloadReport,
+  reportLoading = false
 }) {
   if (!insights) return null;
 
@@ -25,6 +27,17 @@ export default function BusinessInsights({
             <span className="muted-note">
               Generated {formatTimestamp(insights.generated_at)}
             </span>
+          )}
+
+          {onDownloadReport && (
+            <button
+              className="upload-button secondary-button"
+              onClick={onDownloadReport}
+              disabled={reportLoading}
+            >
+              <Download size={16} />
+              {reportLoading ? "Preparing PDF..." : "Download PDF Report"}
+            </button>
           )}
 
           {showRefresh && onRefresh && (

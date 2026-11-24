@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,7 +17,7 @@ def _connect():
     path = _db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    connection = sqlite3.connect(path)
+    connection = sqlite3.connect(path, timeout=30)
     connection.row_factory = sqlite3.Row
     _migrate(connection)
     return connection
@@ -61,24 +62,25 @@ def save_insight(filename, payload, kind="business_insights",
                  dataset_hash=None, record_count=None):
     created_at = datetime.now(timezone.utc).isoformat()
 
-    with _connect() as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO insight_history
-                (created_at, kind, filename, dataset_hash,
-                 record_count, payload)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                created_at,
-                kind,
-                filename,
-                dataset_hash,
-                record_count,
-                json.dumps(payload, default=str),
-            ),
-        )
-        insight_id = cursor.lastrowid
+    with closing(_connect()) as connection:
+        with connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO insight_history
+                    (created_at, kind, filename, dataset_hash,
+                     record_count, payload)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    created_at,
+                    kind,
+                    filename,
+                    dataset_hash,
+                    record_count,
+                    json.dumps(payload, default=str),
+                ),
+            )
+            insight_id = cursor.lastrowid
 
     return {
         "id": insight_id,
@@ -91,21 +93,22 @@ def save_insight(filename, payload, kind="business_insights",
 
 
 def list_insights(limit=50, offset=0):
-    with _connect() as connection:
-        rows = connection.execute(
-            """
-            SELECT id, created_at, kind, filename,
-                   dataset_hash, record_count
-            FROM insight_history
-            ORDER BY id DESC
-            LIMIT ? OFFSET ?
-            """,
-            (limit, offset),
-        ).fetchall()
+    with closing(_connect()) as connection:
+        with connection:
+            rows = connection.execute(
+                """
+                SELECT id, created_at, kind, filename,
+                       dataset_hash, record_count
+                FROM insight_history
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
 
-        total = connection.execute(
-            "SELECT COUNT(*) AS total FROM insight_history"
-        ).fetchone()["total"]
+            total = connection.execute(
+                "SELECT COUNT(*) AS total FROM insight_history"
+            ).fetchone()["total"]
 
     return {
         "items": [_metadata(row) for row in rows],
@@ -116,11 +119,12 @@ def list_insights(limit=50, offset=0):
 
 
 def get_insight(insight_id):
-    with _connect() as connection:
-        row = connection.execute(
-            "SELECT * FROM insight_history WHERE id = ?",
-            (insight_id,),
-        ).fetchone()
+    with closing(_connect()) as connection:
+        with connection:
+            row = connection.execute(
+                "SELECT * FROM insight_history WHERE id = ?",
+                (insight_id,),
+            ).fetchone()
 
     if row is None:
         return None
@@ -131,9 +135,10 @@ def get_insight(insight_id):
 
 
 def delete_insight(insight_id):
-    with _connect() as connection:
-        cursor = connection.execute(
-            "DELETE FROM insight_history WHERE id = ?",
-            (insight_id,),
-        )
+    with closing(_connect()) as connection:
+        with connection:
+            cursor = connection.execute(
+                "DELETE FROM insight_history WHERE id = ?",
+                (insight_id,),
+            )
     return cursor.rowcount > 0

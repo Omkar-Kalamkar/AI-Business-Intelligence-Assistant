@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
-import { Eye, History, RefreshCw, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Download, Eye, History, RefreshCw, Trash2 } from "lucide-react";
 
-import { api } from "../api";
+import { api, downloadReport, getApiError } from "../api";
 import { formatTimestamp, money } from "../format";
 import BusinessInsights from "./BusinessInsights";
 
@@ -16,6 +16,10 @@ export default function HistoryPanel() {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [reportingId, setReportingId] = useState(null);
+  const loadRequest = useRef(false);
+  const detailRequest = useRef(false);
 
   const fetchHistory = useCallback(async () => {
     const response = await api.get("/history");
@@ -23,16 +27,18 @@ export default function HistoryPanel() {
   }, []);
 
   const loadHistory = useCallback(async () => {
+    if (loadRequest.current) return;
+
+    loadRequest.current = true;
     setLoading(true);
     setError("");
 
     try {
       setItems(await fetchHistory());
     } catch (err) {
-      setError(
-        err.response?.data?.detail || "Unable to load insight history."
-      );
+      setError(getApiError(err, "Unable to load insight history."));
     } finally {
+      loadRequest.current = false;
       setLoading(false);
     }
   }, [fetchHistory]);
@@ -49,10 +55,7 @@ export default function HistoryPanel() {
       })
       .catch((err) => {
         if (active) {
-          setError(
-            err.response?.data?.detail ||
-            "Unable to load insight history."
-          );
+          setError(getApiError(err, "Unable to load insight history."));
           setLoading(false);
         }
       });
@@ -63,6 +66,9 @@ export default function HistoryPanel() {
   }, [fetchHistory]);
 
   const viewInsight = async (id) => {
+    if (detailRequest.current) return;
+
+    detailRequest.current = true;
     setDetailLoading(true);
     setError("");
 
@@ -70,15 +76,17 @@ export default function HistoryPanel() {
       const response = await api.get(`/history/${id}`);
       setSelected(response.data);
     } catch (err) {
-      setError(
-        err.response?.data?.detail || "Unable to load this insight."
-      );
+      setError(getApiError(err, "Unable to load this insight."));
     } finally {
+      detailRequest.current = false;
       setDetailLoading(false);
     }
   };
 
   const deleteInsight = async (id) => {
+    if (deletingId !== null) return;
+
+    setDeletingId(id);
     setError("");
 
     try {
@@ -86,9 +94,24 @@ export default function HistoryPanel() {
       if (selected?.id === id) setSelected(null);
       await loadHistory();
     } catch (err) {
-      setError(
-        err.response?.data?.detail || "Unable to delete this insight."
-      );
+      setError(getApiError(err, "Unable to delete this insight."));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const downloadInsightReport = async (id) => {
+    if (reportingId !== null) return;
+
+    setReportingId(id);
+    setError("");
+
+    try {
+      await downloadReport(id);
+    } catch (err) {
+      setError(getApiError(err, "Unable to download the PDF report."));
+    } finally {
+      setReportingId(null);
     }
   };
 
@@ -161,9 +184,19 @@ export default function HistoryPanel() {
                       </button>
 
                       <button
+                        className="icon-button"
+                        title="Download PDF report"
+                        onClick={() => downloadInsightReport(item.id)}
+                        disabled={reportingId !== null}
+                      >
+                        <Download size={16} />
+                      </button>
+
+                      <button
                         className="icon-button danger"
                         title="Delete insight"
                         onClick={() => deleteInsight(item.id)}
+                        disabled={deletingId !== null}
                       >
                         <Trash2 size={16} />
                       </button>

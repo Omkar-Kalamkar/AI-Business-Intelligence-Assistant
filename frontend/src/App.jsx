@@ -1,5 +1,5 @@
 
-import { useState, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import {
   BarChart,
@@ -29,7 +29,7 @@ import {
   Bell
 } from "lucide-react";
 
-import { api } from "./api";
+import { api, downloadReport, getApiError } from "./api";
 import { money } from "./format";
 import BusinessInsights from "./components/BusinessInsights";
 import HistoryPanel from "./components/HistoryPanel";
@@ -51,10 +51,16 @@ function App() {
   const [error, setError] = useState("");
 
   const fileInput = useRef(null);
+  const uploadRequest = useRef(false);
+  const insightsRequest = useRef(false);
+  const chatRequest = useRef(false);
+  const compareRequest = useRef(false);
 
-  // Business insights states
   const [insights, setInsights] = useState(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState("");
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
   const [activeNav, setActiveNav] = useState("dashboard");
 
   // Chatbot states
@@ -82,31 +88,37 @@ function App() {
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // Fetch advanced business insights
-  const fetchInsights = async () => {
+  const fetchInsights = useCallback(async () => {
+    if (insightsRequest.current) return;
+
+    insightsRequest.current = true;
     setInsightsLoading(true);
+    setInsightsError("");
 
     try {
       const response = await api.get("/insights");
       setInsights(response.data);
     } catch (err) {
-      setError(
-        err.response?.data?.detail ||
-        "Unable to generate business insights."
+      setInsightsError(
+        getApiError(err, "Unable to generate business insights.")
       );
     } finally {
+      insightsRequest.current = false;
       setInsightsLoading(false);
     }
-  };
+  }, []);
 
   // Upload dataset
   const handleUpload = async (event) => {
     const file = event.target.files[0];
 
-    if (!file) return;
+    if (!file || uploadRequest.current) return;
 
+    uploadRequest.current = true;
     setLoading(true);
     setError("");
+    setInsightsError("");
+    setReportError("");
 
     const formData = new FormData();
     formData.append("file", file);
@@ -128,12 +140,10 @@ function App() {
       await fetchInsights();
 
     } catch (err) {
-      setError(
-        err.response?.data?.detail ||
-        "Unable to upload dataset."
-      );
+      setError(getApiError(err, "Unable to upload dataset."));
 
     } finally {
+      uploadRequest.current = false;
       setLoading(false);
       event.target.value = "";
     }
@@ -143,7 +153,7 @@ function App() {
   const handleAsk = async () => {
     const userQuestion = question.trim();
 
-    if (!userQuestion || chatLoading) return;
+    if (!userQuestion || chatLoading || chatRequest.current) return;
 
     if (!data) {
       setError("Please upload a dataset first.");
@@ -151,6 +161,7 @@ function App() {
     }
 
     setError("");
+    chatRequest.current = true;
     setChatLoading(true);
     setQuestion("");
 
@@ -171,9 +182,7 @@ function App() {
       ]);
 
     } catch (err) {
-      const message =
-        err.response?.data?.detail ||
-        "Unable to get an answer.";
+      const message = getApiError(err, "Unable to get an answer.");
 
       setChatHistory((prev) => [
         ...prev,
@@ -184,12 +193,15 @@ function App() {
       ]);
 
     } finally {
+      chatRequest.current = false;
       setChatLoading(false);
     }
   };
 
   // Compare two products or regions
   const handleCompare = async () => {
+    if (compareLoading || compareRequest.current) return;
+
     if (!data) {
       setError("Please upload a dataset first.");
       return;
@@ -208,6 +220,7 @@ function App() {
       return;
     }
 
+    compareRequest.current = true;
     setCompareLoading(true);
     setError("");
     setComparison(null);
@@ -226,12 +239,29 @@ function App() {
 
     } catch (err) {
       setError(
-        err.response?.data?.detail ||
-        "Unable to compare the selected items."
+        getApiError(err, "Unable to compare the selected items.")
       );
 
     } finally {
+      compareRequest.current = false;
       setCompareLoading(false);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    if (!data || reportLoading) return;
+
+    setReportLoading(true);
+    setReportError("");
+
+    try {
+      await downloadReport(insights?.insight_id);
+    } catch (err) {
+      setReportError(
+        getApiError(err, "Unable to download the PDF report.")
+      );
+    } finally {
+      setReportLoading(false);
     }
   };
 
@@ -376,14 +406,22 @@ function App() {
 
         </header>
 
-        {/* ERROR MESSAGE */}
-        {error && (
-          <p className="error-message">
-            {error}
+        {(error || insightsError || reportError) && (
+          <div className="error-message" role="alert">
+            {[error, insightsError, reportError]
+              .filter(Boolean)
+              .map((message, index) => (
+                <p key={index}>{message}</p>
+              ))}
+          </div>
+        )}
+
+        {loading && (
+          <p className="muted-note" role="status">
+            Uploading and analyzing your dataset...
           </p>
         )}
 
-        {/* WELCOME SCREEN */}
         {!data && !loading && (
           <div className="chart-card">
             <h3>Welcome to InsightAI</h3>
@@ -550,8 +588,14 @@ function App() {
 
             {/* ADVANCED BUSINESS INSIGHTS */}
             {insightsLoading && (
-              <p className="muted-note">
+              <p className="muted-note" role="status">
                 Detecting anomalies and generating insights...
+              </p>
+            )}
+
+            {!insightsLoading && !insights && (
+              <p className="muted-note">
+                Advanced insights are not available for this dataset.
               </p>
             )}
 
@@ -559,6 +603,8 @@ function App() {
               insights={insights}
               onRefresh={fetchInsights}
               refreshing={insightsLoading}
+              onDownloadReport={handleDownloadReport}
+              reportLoading={reportLoading}
             />
           </>
         )}

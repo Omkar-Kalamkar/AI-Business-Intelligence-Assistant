@@ -1,22 +1,48 @@
-from pydantic import BaseModel
-from ai_assistant import answer_question
-import pandas as pd
-
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
-
-from data_processing import load_dataset, clean_dataset
-from analytics import generate_analysis, compare_sales
-from anomaly_detection import detect_anomalies, detect_trend_anomalies
-from root_cause import analyze_root_cause
-from kpi_alerts import generate_kpi_alerts
-from recommendations import generate_recommendations
-import insight_history
-
 import hashlib
 import json
+import logging
+import os
 import uuid
 from datetime import datetime, timezone
+
+import pandas as pd
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from pydantic import BaseModel, Field
+
+from ai_assistant import answer_question
+from analytics import generate_analysis, compare_sales
+from anomaly_detection import detect_anomalies, detect_trend_anomalies
+from data_processing import (
+    MAX_UPLOAD_BYTES,
+    UploadTooLarge,
+    clean_dataset,
+    load_dataset,
+    sanitize_filename,
+)
+from kpi_alerts import generate_kpi_alerts
+from recommendations import generate_recommendations
+from report import build_pdf_report
+from root_cause import analyze_root_cause
+import insight_history
+
+
+logger = logging.getLogger("bi_assistant")
+
+
+def _cors_origins():
+    configured = os.environ.get("CORS_ALLOW_ORIGINS")
+    if configured:
+        return [
+            origin.strip()
+            for origin in configured.split(",")
+            if origin.strip() and origin.strip() != "*"
+        ]
+    return [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
 
 app = FastAPI(
     title="AI Business Intelligence Assistant",
@@ -26,10 +52,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 
 # Store the latest uploaded dataset in memory
@@ -40,17 +66,36 @@ current_insights = None
 
 
 def _dataset_hash(df):
-    hashed = pd.util.hash_pandas_object(df, index=True).values
-    return hashlib.sha256(hashed.tobytes()).hexdigest()
+    try:
+        hashed = pd.util.hash_pandas_object(df, index=True).values
+        digest = hashlib.sha256(hashed.tobytes()).hexdigest()
+    except (TypeError, ValueError):
+        payload = df.to_json(orient="records", date_format="iso")
+        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return digest
+
+
+def _pdf_filename(filename, insight_id=None):
+    base = os.path.splitext(sanitize_filename(filename))[0]
+    safe = "".join(
+        character
+        if character.isascii() and (character.isalnum() or character in "._-")
+        else "_"
+        for character in base
+    )
+    safe = safe.strip("._") or "insight"
+    suffix = f"_{insight_id}" if insight_id else ""
+    return f"{safe[:70]}{suffix}.pdf"
 
 
 class ChatRequest(BaseModel):
-    question: str
+    question: str = Field(min_length=1, max_length=2000)
+
 
 class CompareRequest(BaseModel):
-    dimension: str
-    item1: str
-    item2: str
+    dimension: str = Field(min_length=1, max_length=50)
+    item1: str = Field(min_length=1, max_length=200)
+    item2: str = Field(min_length=1, max_length=200)
 
 
 @app.get("/")
@@ -66,8 +111,17 @@ def home():
 async def upload_dataset(file: UploadFile = File(...)):
     global current_df, current_meta, current_analysis, current_insights
 
+    filename = sanitize_filename(file.filename)
+
     try:
-        df = load_dataset(file)
+        content = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise UploadTooLarge(
+                "The uploaded file is too large. The maximum size is "
+                f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
+            )
+
+        df = load_dataset(file, content=content)
 
         original_records = len(df)
         df = clean_dataset(df)
@@ -81,14 +135,14 @@ async def upload_dataset(file: UploadFile = File(...)):
         dataset_hash = _dataset_hash(df)
         current_meta = {
             "dataset_id": uuid.uuid4().hex,
-            "filename": file.filename,
+            "filename": filename,
             "uploaded_at": datetime.now(timezone.utc).isoformat(),
             "record_count": int(len(df)),
             "dataset_hash": dataset_hash,
         }
 
         insight_history.save_insight(
-            filename=file.filename,
+            filename=filename,
             payload={"analysis": analysis},
             kind="upload_analysis",
             dataset_hash=dataset_hash,
@@ -101,7 +155,7 @@ async def upload_dataset(file: UploadFile = File(...)):
 
         return {
             "message": "Dataset analyzed successfully!",
-            "filename": file.filename,
+            "filename": filename,
             "original_records": original_records,
             "cleaned_records": len(df),
             "analysis": analysis,
@@ -110,10 +164,20 @@ async def upload_dataset(file: UploadFile = File(...)):
             "uploaded_at": current_meta["uploaded_at"]
         }
 
-    except Exception as e:
+    except UploadTooLarge as error:
+        raise HTTPException(status_code=413, detail=str(error))
+
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        logger.exception("Dataset upload failed")
         raise HTTPException(
-            status_code=400,
-            detail=str(e)
+            status_code=500,
+            detail="Unable to upload and analyze the dataset."
         )
 
 
@@ -147,10 +211,14 @@ async def ask_question(request: ChatRequest):
             "answer": answer
         }
 
-    except Exception as e:
+    except HTTPException:
+        raise
+
+    except Exception:
+        logger.exception("Question answering failed")
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail="Unable to answer the question right now."
         )
 
 
@@ -178,84 +246,163 @@ async def compare_dataset(request: CompareRequest):
 
         return result
 
-    except ValueError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=str(e)
-        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
-    except Exception as e:
+    except HTTPException:
+        raise
+
+    except Exception:
+        logger.exception("Dataset comparison failed")
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail="Unable to compare the selected items right now."
         )
 
 
 def _require_dataset():
-    if current_df is None:
+    if current_df is None or current_meta is None:
         raise HTTPException(
             status_code=400,
             detail="Please upload a dataset first."
         )
 
 
-@app.get("/insights")
-def business_insights(save: bool = Query(default=True)):
+def _build_insights(save=True):
     global current_insights
 
+    df = current_df
+    analysis = current_analysis or generate_analysis(df)
+
+    anomalies = detect_anomalies(df)
+    trends = detect_trend_anomalies(df)
+    root_cause = analyze_root_cause(df, trends)
+    alerts = generate_kpi_alerts(df)
+    recommendations = generate_recommendations(
+        analysis,
+        anomalies=anomalies,
+        trends=trends,
+        root_cause=root_cause,
+        alerts=alerts,
+    )
+
+    payload = {
+        "dataset_id": current_meta["dataset_id"],
+        "filename": current_meta["filename"],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "summary": analysis["summary"],
+        "insights": analysis.get("insights", []),
+        "anomalies": anomalies,
+        "trends": trends,
+        "root_cause": root_cause,
+        "kpi_alerts": alerts,
+        "recommendations": recommendations,
+    }
+
+    insight_id = None
+    if save:
+        saved = insight_history.save_insight(
+            filename=current_meta["filename"],
+            payload=payload,
+            kind="business_insights",
+            dataset_hash=current_meta["dataset_hash"],
+            record_count=current_meta["record_count"],
+        )
+        insight_id = saved["id"]
+
+    payload["insight_id"] = insight_id
+    current_insights = payload
+    return payload
+
+
+def _report_response(payload, filename):
+    pdf = build_pdf_report(payload, filename=filename)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        },
+    )
+
+
+def _report_payload_from_record(record):
+    payload = dict(record.get("payload") or {})
+    if "anomalies" in payload:
+        return payload
+
+    analysis = payload.get("analysis") or {}
+    return {
+        "filename": record.get("filename"),
+        "generated_at": record.get("created_at"),
+        "summary": analysis.get("summary", {}),
+        "insights": analysis.get("insights", []),
+        "recommendations": analysis.get("recommendations", []),
+    }
+
+
+@app.get("/insights")
+def business_insights(save: bool = Query(default=True)):
     _require_dataset()
 
     try:
-        df = current_df
-        analysis = current_analysis or generate_analysis(df)
-
-        anomalies = detect_anomalies(df)
-        trends = detect_trend_anomalies(df)
-        root_cause = analyze_root_cause(df, trends)
-        alerts = generate_kpi_alerts(df)
-        recommendations = generate_recommendations(
-            analysis,
-            anomalies=anomalies,
-            trends=trends,
-            root_cause=root_cause,
-            alerts=alerts,
-        )
-
-        payload = {
-            "dataset_id": current_meta["dataset_id"],
-            "filename": current_meta["filename"],
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "summary": analysis["summary"],
-            "anomalies": anomalies,
-            "trends": trends,
-            "root_cause": root_cause,
-            "kpi_alerts": alerts,
-            "recommendations": recommendations,
-        }
-
-        insight_id = None
-        if save:
-            saved = insight_history.save_insight(
-                filename=current_meta["filename"],
-                payload=payload,
-                kind="business_insights",
-                dataset_hash=current_meta["dataset_hash"],
-                record_count=current_meta["record_count"],
-            )
-            insight_id = saved["id"]
-
-        payload["insight_id"] = insight_id
-        current_insights = payload
-
-        return payload
+        return _build_insights(save=save)
 
     except HTTPException:
         raise
 
-    except Exception as e:
+    except Exception:
+        logger.exception("Insight generation failed")
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail="Unable to generate business insights right now."
+        )
+
+
+@app.get("/report")
+def download_report(save: bool = Query(default=False)):
+    _require_dataset()
+
+    try:
+        payload = current_insights or _build_insights(save=save)
+        filename = _pdf_filename(
+            current_meta["filename"], payload.get("insight_id")
+        )
+        return _report_response(payload, filename)
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        logger.exception("PDF report generation failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate the PDF report right now."
+        )
+
+
+@app.get("/report/{insight_id}")
+def download_saved_report(insight_id: int):
+    try:
+        record = insight_history.get_insight(insight_id)
+        if record is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Insight not found."
+            )
+
+        payload = _report_payload_from_record(record)
+        filename = _pdf_filename(record["filename"], insight_id)
+        return _report_response(payload, filename)
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        logger.exception("Saved PDF report generation failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate the PDF report right now."
         )
 
 
@@ -266,16 +413,24 @@ def history_list(
 ):
     try:
         return insight_history.list_insights(limit=limit, offset=offset)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("History listing failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to load insight history right now."
+        )
 
 
 @app.get("/history/{insight_id}")
 def history_detail(insight_id: int):
     try:
         result = insight_history.get_insight(insight_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("History detail lookup failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to load this insight right now."
+        )
 
     if result is None:
         raise HTTPException(
@@ -290,8 +445,12 @@ def history_detail(insight_id: int):
 def history_delete(insight_id: int):
     try:
         deleted = insight_history.delete_insight(insight_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("History deletion failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to delete this insight right now."
+        )
 
     if not deleted:
         raise HTTPException(
