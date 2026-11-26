@@ -37,3 +37,53 @@ export const downloadReport = async (insightId) => {
 
   return filename;
 };
+
+const extensionFor = (format) => (format === "excel" ? "xlsx" : "pdf");
+
+const mediaTypeFor = (format) => (
+  format === "excel"
+    ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    : "application/pdf"
+);
+
+const saveBlobResponse = async (request, fallbackFilename, format) => {
+  const response = await request;
+  const disposition = response.headers?.["content-disposition"] || "";
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  const filename = match ? match[1] : fallbackFilename;
+
+  const objectUrl = URL.createObjectURL(
+    new Blob([response.data], { type: mediaTypeFor(format) })
+  );
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+
+  return filename;
+};
+
+export const generateReport = (payload = {}) => api.post("/reports", payload);
+
+export const listReports = () => api.get("/reports");
+
+export const getReport = (reportId) => api.get(`/reports/${reportId}`);
+
+export const deleteReport = (reportId) => api.delete(`/reports/${reportId}`);
+
+export const downloadCurrentReport = (format) =>
+  saveBlobResponse(
+    api.get(`/reports/current/${format}`, { responseType: "blob" }),
+    `business-report.${extensionFor(format)}`,
+    format
+  );
+
+export const downloadReportFile = (reportId, format) =>
+  saveBlobResponse(
+    api.get(`/reports/${reportId}/${format}`, { responseType: "blob" }),
+    `report-${reportId}.${extensionFor(format)}`,
+    format
+  );

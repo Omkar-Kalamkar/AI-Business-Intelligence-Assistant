@@ -92,22 +92,31 @@ def save_insight(filename, payload, kind="business_insights",
     }
 
 
-def list_insights(limit=50, offset=0):
+def list_insights(limit=50, offset=0, kind=None):
+    where = ""
+    parameters = []
+
+    if kind is not None:
+        where = " WHERE kind = ?"
+        parameters.append(kind)
+
     with closing(_connect()) as connection:
         with connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT id, created_at, kind, filename,
                        dataset_hash, record_count
                 FROM insight_history
+                {where}
                 ORDER BY id DESC
                 LIMIT ? OFFSET ?
                 """,
-                (limit, offset),
+                (*parameters, limit, offset),
             ).fetchall()
 
             total = connection.execute(
-                "SELECT COUNT(*) AS total FROM insight_history"
+                f"SELECT COUNT(*) AS total FROM insight_history{where}",
+                parameters,
             ).fetchone()["total"]
 
     return {

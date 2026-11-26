@@ -878,3 +878,146 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+.reports-panel {
+  margin-top: 25px;
+}
+
+.report-actions,
+.report-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.report-actions {
+  margin: 18px 0;
+}
+
+.report-preview-header {
+  justify-content: space-between;
+}
+
+.report-preview-header h4,
+.report-history h4 {
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+
+.report-download-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.report-warning {
+  background: #fef3c7;
+  color: #b45309;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.report-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.report-metric {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.report-metric span {
+  display: block;
+  color: #64748b;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.report-metric strong {
+  color: #1e293b;
+  font-size: 19px;
+}
+
+.report-block {
+  border-top: 1px solid #e2e8f0;
+  margin-top: 20px;
+  padding-top: 18px;
+}
+
+.report-block h4 {
+  color: #1e293b;
+  margin-bottom: 12px;
+}
+
+.report-headline {
+  color: #3730a3;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.report-highlights {
+  padding-left: 22px;
+  color: #334155;
+  line-height: 1.8;
+}
+
+.report-charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.report-chart-card,
+.report-table-block {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.report-chart-card h5,
+.report-table-block h5 {
+  color: #334155;
+  margin-bottom: 12px;
+}
+
+.report-table-block {
+  margin-bottom: 16px;
+}
+
+.report-table-wrapper {
+  margin-top: 0;
+}
+
+.report-data-table td {
+  white-space: normal;
+  vertical-align: top;
+}
+
+.report-history {
+  border-top: 1px solid #e2e8f0;
+  margin-top: 25px;
+  padding-top: 20px;
+}
+
+@media (max-width: 1000px) {
+  .report-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 650px) {
+  .report-preview-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

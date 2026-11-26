@@ -19,6 +19,7 @@ import {
   TrendingUp,
   ShoppingCart,
   DollarSign,
+  FileBarChart,
   Users,
   Upload,
   BrainCircuit,
@@ -33,6 +34,7 @@ import { api, downloadReport, getApiError } from "./api";
 import { money } from "./format";
 import BusinessInsights from "./components/BusinessInsights";
 import HistoryPanel from "./components/HistoryPanel";
+import ReportsPanel from "./components/ReportsPanel";
 
 import "./App.css";
 
@@ -333,9 +335,12 @@ function App() {
             Analytics
           </p>
 
-          <p>
-            <ShoppingCart />
-            Sales Reports
+          <p
+            className={activeNav === "reports" ? "active" : ""}
+            onClick={() => scrollToSection("reports", "reports")}
+          >
+            <FileBarChart />
+            Reports
           </p>
 
           <p onClick={() => fileInput.current?.click()}>
@@ -788,6 +793,11 @@ function App() {
           </div>
 
         </section>
+
+        <ReportsPanel
+          key={data?.dataset_id || "no-dataset"}
+          dataset={data}
+        />
 
         {/* INSIGHT HISTORY */}
         <HistoryPanel />

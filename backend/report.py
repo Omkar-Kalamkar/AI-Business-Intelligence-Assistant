@@ -1,7 +1,9 @@
 import io
 import json
+import math
 import re
 
+from reportlab.graphics.shapes import Circle, Drawing, Line, Rect, String, Wedge
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
@@ -22,6 +24,7 @@ MAX_DETAIL_ROWS = 10
 MAX_TREND_ROWS = 15
 MAX_ALERTS = 10
 MAX_TEXT = 400
+CHART_COLORS = ["#6366f1", "#06b6d4", "#f59e0b", "#10b981", "#ec4899"]
 
 
 def _ascii_filename(filename):
@@ -303,6 +306,332 @@ def _recommendation_section(story, payload, styles):
         story.append(Spacer(1, 4))
 
 
+def _finite_number(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _chart_drawing(chart):
+    data = []
+
+    for point in (chart or {}).get("data") or []:
+        if not isinstance(point, dict):
+            continue
+        value = _finite_number(point.get("value"))
+        if value is None:
+            continue
+        data.append((
+            _stringify(point.get("label"), limit=20),
+            value,
+            point,
+        ))
+
+    width = 170 * mm
+    height = 70 * mm
+    drawing = Drawing(width, height)
+    drawing.hAlign = "LEFT"
+    drawing.add(Rect(
+        0, 0, width, height,
+        strokeColor=None, fillColor=colors.white,
+    ))
+
+    if not data:
+        drawing.add(String(
+            12, float(height) / 2, "No chart data available.",
+            fontName="Helvetica", fontSize=9,
+            fillColor=colors.HexColor("#64748b"),
+        ))
+        return drawing
+
+    axis_x = 46.0
+    baseline = 26.0
+    plot_width = float(width) - 62.0
+    plot_height = float(height) - 44.0
+    values = [item[1] for item in data]
+    low = min(0.0, min(values))
+    high = max(0.0, max(values))
+    if high == low:
+        high = low + 1.0
+
+    def y_for(value):
+        return baseline + (value - low) / (high - low) * plot_height
+
+    drawing.add(Line(
+        axis_x, baseline, axis_x + plot_width, baseline,
+        strokeColor=colors.HexColor("#94a3b8"), strokeWidth=0.6,
+    ))
+    drawing.add(Line(
+        axis_x, baseline, axis_x, baseline + plot_height,
+        strokeColor=colors.HexColor("#94a3b8"), strokeWidth=0.6,
+    ))
+
+    for marker in (low, high):
+        drawing.add(String(
+            4, y_for(marker) - 2, _stringify(round(marker, 2), limit=12),
+            fontName="Helvetica", fontSize=7,
+            fillColor=colors.HexColor("#64748b"),
+        ))
+
+    if (chart or {}).get("type") == "pie":
+        total = sum(abs(value) for _, value, _ in data)
+        if total <= 0:
+            return drawing
+
+        center_x = axis_x + plot_width * 0.3
+        center_y = baseline + plot_height / 2
+        radius = min(plot_height / 2 - 4, plot_width * 0.22)
+        angle = 90.0
+        legend_x = axis_x + plot_width * 0.58
+        legend_y = baseline + plot_height - 4
+
+        for index, (label, value, _) in enumerate(data[:8]):
+            extent = abs(value) / total * 360
+            if extent <= 0:
+                continue
+            color = colors.HexColor(
+                CHART_COLORS[index % len(CHART_COLORS)]
+            )
+            drawing.add(Wedge(
+                center_x, center_y, radius, angle, angle + extent,
+                fillColor=color, strokeColor=colors.white,
+                strokeWidth=1,
+            ))
+            if legend_y > baseline + 10:
+                drawing.add(Rect(
+                    legend_x, legend_y - 6, 8, 8,
+                    fillColor=color, strokeColor=None,
+                ))
+                drawing.add(String(
+                    legend_x + 12, legend_y - 6,
+                    _stringify(f"{label} ({value:,.0f})", limit=34),
+                    fontName="Helvetica", fontSize=7,
+                    fillColor=colors.HexColor("#334155"),
+                ))
+                legend_y -= 12
+            angle += extent
+        return drawing
+
+    tick_step = max(1, math.ceil(len(data) / 9))
+    slot = plot_width / len(data)
+
+    if (chart or {}).get("type") == "line":
+        reference = _finite_number((chart or {}).get("reference"))
+        if reference is not None and low <= reference <= high:
+            drawing.add(Line(
+                axis_x, y_for(reference),
+                axis_x + plot_width, y_for(reference),
+                strokeColor=colors.HexColor("#94a3b8"),
+                strokeWidth=0.7, strokeDashArray=(4, 3),
+            ))
+
+        positions = [
+            axis_x + slot * (index + 0.5)
+            for index in range(len(data))
+        ]
+        for index in range(len(data) - 1):
+            drawing.add(Line(
+                positions[index], y_for(values[index]),
+                positions[index + 1], y_for(values[index + 1]),
+                strokeColor=colors.HexColor("#6366f1"), strokeWidth=1.6,
+            ))
+
+        for index, (label, value, point) in enumerate(data):
+            unusual = bool(point.get("is_anomaly"))
+            drawing.add(Circle(
+                positions[index], y_for(value),
+                3.2 if unusual else 2.2,
+                fillColor=(
+                    colors.HexColor("#dc2626") if unusual
+                    else colors.HexColor("#6366f1")
+                ),
+                strokeColor=colors.white if unusual else None,
+            ))
+            if index % tick_step == 0:
+                drawing.add(String(
+                    positions[index] - 12, baseline - 12, label,
+                    fontName="Helvetica", fontSize=6.5,
+                    fillColor=colors.HexColor("#64748b"),
+                ))
+        return drawing
+
+    bar_width = min(28.0, slot * 0.65)
+    zero_line = y_for(0.0)
+
+    for index, (label, value, _) in enumerate(data):
+        bar_top = y_for(value)
+        x_position = axis_x + index * slot + (slot - bar_width) / 2
+        drawing.add(Rect(
+            x_position, min(bar_top, zero_line),
+            bar_width, max(1.5, abs(bar_top - zero_line)),
+            fillColor=colors.HexColor(
+                CHART_COLORS[index % len(CHART_COLORS)]
+            ),
+            strokeColor=None,
+        ))
+        if index % tick_step == 0:
+            drawing.add(String(
+                x_position, baseline - 12, label,
+                fontName="Helvetica", fontSize=6.5,
+                fillColor=colors.HexColor("#64748b"),
+            ))
+    return drawing
+
+
+def _report_table(table, styles):
+    columns = (table or {}).get("columns") or []
+    if not columns:
+        return _paragraph("No columns were available.", styles["body"])
+
+    headers = [column.get("label", "-") for column in columns]
+    rows = []
+    for row in (table or {}).get("rows") or []:
+        rows.append([
+            row.get(column.get("key"), "-") if isinstance(row, dict) else "-"
+            for column in columns
+        ])
+
+    width = 174 * mm / len(headers)
+    return _table(headers, rows, styles, [width] * len(headers))
+
+
+def _report_header(story, payload, styles):
+    story.append(_paragraph(
+        payload.get("title") or "Business Intelligence Report",
+        styles["title"],
+    ))
+    story.append(_paragraph(
+        f"Dataset: {payload.get('filename') or 'Unknown'}", styles["body"]
+    ))
+    story.append(_paragraph(
+        f"Generated: {payload.get('generated_at') or 'Unknown'}",
+        styles["body"],
+    ))
+    if payload.get("notes"):
+        story.append(_paragraph(
+            f"Notes: {payload['notes']}", styles["body"]
+        ))
+    story.append(Spacer(1, 6))
+
+
+def _report_executive_section(story, payload, styles):
+    summary = payload.get("executive_summary") or {}
+    story.append(_paragraph("Executive Summary", styles["heading"]))
+    story.append(_paragraph(
+        summary.get("headline") or "Business performance overview",
+        styles["body"],
+    ))
+
+    for paragraph in summary.get("paragraphs") or []:
+        story.append(_paragraph(paragraph, styles["body"]))
+
+    metrics = summary.get("metrics") or []
+    if metrics:
+        rows = [
+            [metric.get("label", "-"), metric.get("value", "-")]
+            for metric in metrics if isinstance(metric, dict)
+        ]
+        story.append(_table(
+            ["Metric", "Value"], rows, styles, [70 * mm, 100 * mm]
+        ))
+    else:
+        story.append(_paragraph(
+            "No executive metrics were available.", styles["body"]
+        ))
+
+    highlights = summary.get("highlights") or []
+    if highlights:
+        story.append(_paragraph("Highlights", styles["heading"]))
+        for highlight in highlights:
+            story.append(_paragraph(f"- {highlight}", styles["body"]))
+
+    warnings = payload.get("warnings") or []
+    for warning in warnings:
+        story.append(_paragraph(f"Note: {warning}", styles["body"]))
+
+
+def _report_kpi_section(story, payload, styles):
+    performance = payload.get("kpi_performance") or {}
+    story.append(_paragraph("KPI Performance", styles["heading"]))
+    story.append(_paragraph(
+        performance.get("message") or "KPI performance was not available.",
+        styles["body"],
+    ))
+
+    periods = []
+    if performance.get("current_period"):
+        periods.append(f"current: {performance['current_period']}")
+    if performance.get("previous_period"):
+        periods.append(f"previous: {performance['previous_period']}")
+    if periods:
+        story.append(_paragraph("; ".join(periods), styles["body"]))
+
+    table = next(
+        (item for item in payload.get("tables") or []
+         if isinstance(item, dict) and item.get("id") == "kpi_performance"),
+        None,
+    )
+    if table:
+        story.append(_report_table(table, styles))
+
+
+def _report_charts_section(story, payload, styles):
+    story.append(_paragraph("Charts", styles["heading"]))
+
+    for chart in payload.get("charts") or []:
+        if not isinstance(chart, dict):
+            continue
+        story.append(_paragraph(
+            chart.get("title") or "Chart", styles["heading"]
+        ))
+        if not chart.get("data") and chart.get("message"):
+            story.append(_paragraph(chart["message"], styles["body"]))
+        story.append(_chart_drawing(chart))
+        story.append(Spacer(1, 8))
+
+
+def _report_detection_notes(story, payload, styles):
+    sections = (
+        ("anomalies", "Anomaly Detection"),
+        ("trends", "Sales Trend Anomalies"),
+        ("root_cause", "Root Cause Analysis"),
+    )
+
+    for key, title in sections:
+        section = payload.get(key) or {}
+        message = section.get("summary") or section.get("message")
+        if not message:
+            continue
+        story.append(_paragraph(title, styles["heading"]))
+        story.append(_paragraph(message, styles["body"]))
+
+
+def _report_tables_section(story, payload, styles):
+    story.append(_paragraph("Detailed Tables", styles["heading"]))
+    skip = {"kpi_performance", "executive_metrics"}
+
+    for table in payload.get("tables") or []:
+        if not isinstance(table, dict) or table.get("id") in skip:
+            continue
+        story.append(_paragraph(
+            table.get("title") or "Table", styles["heading"]
+        ))
+        if table.get("rows"):
+            story.append(_report_table(table, styles))
+        else:
+            story.append(_paragraph(
+                table.get("message") or "No rows were available.",
+                styles["body"],
+            ))
+        story.append(Spacer(1, 6))
+
+
+def _is_structured_report(payload):
+    return isinstance(payload, dict) and "executive_summary" in payload
+
+
 def build_pdf_report(payload, filename="report.pdf"):
     buffer = io.BytesIO()
     document = SimpleDocTemplate(
@@ -318,14 +647,24 @@ def build_pdf_report(payload, filename="report.pdf"):
     styles = _styles()
     story = []
 
-    _summary_section(story, payload, styles)
-    story.append(PageBreak())
-    _anomaly_section(story, payload, styles)
-    _trend_section(story, payload, styles)
-    _root_cause_section(story, payload, styles)
-    story.append(PageBreak())
-    _alerts_section(story, payload, styles)
-    _recommendation_section(story, payload, styles)
+    if _is_structured_report(payload):
+        _report_header(story, payload, styles)
+        _report_executive_section(story, payload, styles)
+        story.append(PageBreak())
+        _report_kpi_section(story, payload, styles)
+        _report_charts_section(story, payload, styles)
+        story.append(PageBreak())
+        _report_detection_notes(story, payload, styles)
+        _report_tables_section(story, payload, styles)
+    else:
+        _summary_section(story, payload, styles)
+        story.append(PageBreak())
+        _anomaly_section(story, payload, styles)
+        _trend_section(story, payload, styles)
+        _root_cause_section(story, payload, styles)
+        story.append(PageBreak())
+        _alerts_section(story, payload, styles)
+        _recommendation_section(story, payload, styles)
 
     document.build(story)
     return buffer.getvalue()

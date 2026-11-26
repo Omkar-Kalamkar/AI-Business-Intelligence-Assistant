@@ -8,6 +8,12 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   delete: vi.fn(),
   downloadReport: vi.fn(),
+  generateReport: vi.fn(),
+  listReports: vi.fn(),
+  getReport: vi.fn(),
+  deleteReport: vi.fn(),
+  downloadCurrentReport: vi.fn(),
+  downloadReportFile: vi.fn(),
 }));
 
 vi.mock("./api", () => ({
@@ -17,6 +23,12 @@ vi.mock("./api", () => ({
     delete: mocks.delete,
   },
   downloadReport: mocks.downloadReport,
+  generateReport: mocks.generateReport,
+  listReports: mocks.listReports,
+  getReport: mocks.getReport,
+  deleteReport: mocks.deleteReport,
+  downloadCurrentReport: mocks.downloadCurrentReport,
+  downloadReportFile: mocks.downloadReportFile,
   getApiError: (error, fallback) =>
     error?.response?.data?.detail || fallback,
 }));
@@ -131,6 +143,27 @@ describe("App end-to-end workflow", () => {
     });
 
     mocks.downloadReport.mockResolvedValue("report_42.pdf");
+    mocks.listReports.mockResolvedValue({ data: { items: [] } });
+    mocks.generateReport.mockResolvedValue({
+      data: {
+        id: 7,
+        report: {
+          title: "Business Intelligence Report",
+          filename: "report.csv",
+          generated_at: "2026-01-01T00:00:00Z",
+          executive_summary: {
+            headline: "Business performance overview",
+            paragraphs: ["Dataset: report.csv."],
+            metrics: [],
+            highlights: [],
+          },
+          kpi_performance: { message: "Baseline checks completed." },
+          charts: [],
+          tables: [],
+          warnings: [],
+        },
+      },
+    });
   });
 
   it("shows an empty state before a dataset is uploaded", async () => {
@@ -219,5 +252,27 @@ describe("App end-to-end workflow", () => {
     await waitFor(() => {
       expect(mocks.downloadReport).toHaveBeenCalledWith(42);
     });
+  });
+
+  it("generates a report from the reports section", async () => {
+    render(<App />);
+
+    expect(screen.getAllByText(/Reports/i).length).toBeGreaterThan(0);
+    expect(
+      await screen.findByText(/No saved reports yet/i)
+    ).toBeInTheDocument();
+
+    await uploadFile();
+    await screen.findByText("Dataset Preview");
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Generate Report$/i })
+    );
+
+    await waitFor(() => {
+      expect(mocks.generateReport).toHaveBeenCalledWith({});
+    });
+    expect(
+      await screen.findByText("Business performance overview")
+    ).toBeInTheDocument();
   });
 });

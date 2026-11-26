@@ -21,9 +21,15 @@ from data_processing import (
     load_dataset,
     sanitize_filename,
 )
+from excel_report import build_excel_report
 from kpi_alerts import generate_kpi_alerts
 from recommendations import generate_recommendations
 from report import build_pdf_report
+from reporting import (
+    ReportValidationError,
+    build_report_payload,
+    validate_report_payload,
+)
 from root_cause import analyze_root_cause
 import insight_history
 
@@ -88,6 +94,19 @@ def _pdf_filename(filename, insight_id=None):
     return f"{safe[:70]}{suffix}.pdf"
 
 
+def _report_filename(filename, extension, report_id=None):
+    base = os.path.splitext(sanitize_filename(filename))[0]
+    safe = "".join(
+        character
+        if character.isascii() and (character.isalnum() or character in "._-")
+        else "_"
+        for character in base
+    )
+    safe = safe.strip("._") or "report"
+    suffix = f"_{report_id}" if report_id else ""
+    return f"{safe[:60]}{suffix}.{extension}"
+
+
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
 
@@ -96,6 +115,15 @@ class CompareRequest(BaseModel):
     dimension: str = Field(min_length=1, max_length=50)
     item1: str = Field(min_length=1, max_length=200)
     item2: str = Field(min_length=1, max_length=200)
+
+
+class ReportRequest(BaseModel):
+    title: str = Field(
+        default="Business Intelligence Report",
+        min_length=1,
+        max_length=120,
+    )
+    notes: str = Field(default="", max_length=1000)
 
 
 @app.get("/")
@@ -459,4 +487,202 @@ def history_delete(insight_id: int):
         )
 
     return {"deleted": True, "id": insight_id}
+
+
+def _build_current_report_payload(request=None):
+    insights = current_insights or _build_insights(save=True)
+    return build_report_payload(
+        current_analysis,
+        insights,
+        filename=current_meta["filename"],
+        dataset_id=current_meta["dataset_id"],
+        title=request.title if request else None,
+        notes=request.notes if request else None,
+    )
+
+
+def _export_response(payload, filename, extension):
+    validate_report_payload(payload)
+
+    if extension == "pdf":
+        content = build_pdf_report(payload, filename=filename)
+        media_type = "application/pdf"
+    else:
+        content = build_excel_report(payload, filename=filename)
+        media_type = (
+            "application/vnd.openxmlformats-officedocument"
+            ".spreadsheetml.sheet"
+        )
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        },
+    )
+
+
+def _get_stored_report(report_id):
+    record = insight_history.get_insight(report_id)
+
+    if record is None or record.get("kind") != "business_report":
+        raise HTTPException(status_code=404, detail="Report not found.")
+
+    validate_report_payload(record["payload"])
+    return record
+
+
+@app.post("/reports", status_code=201)
+def create_report(request: ReportRequest | None = None):
+    _require_dataset()
+
+    try:
+        payload = _build_current_report_payload(request)
+        saved = insight_history.save_insight(
+            filename=current_meta["filename"],
+            payload=payload,
+            kind="business_report",
+            dataset_hash=current_meta["dataset_hash"],
+            record_count=current_meta["record_count"],
+        )
+        result = dict(saved)
+        result["report"] = payload
+        return result
+
+    except HTTPException:
+        raise
+
+    except (ReportValidationError, ValueError) as error:
+        logger.exception("Report validation failed")
+        raise HTTPException(
+            status_code=400,
+            detail="The generated report data could not be validated.",
+        ) from error
+
+    except Exception:
+        logger.exception("Report generation failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate the report right now."
+        )
+
+
+@app.get("/reports")
+def list_reports(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    try:
+        return insight_history.list_insights(
+            limit=limit, offset=offset, kind="business_report"
+        )
+    except Exception:
+        logger.exception("Report history listing failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to load report history right now."
+        )
+
+
+@app.get("/reports/current/pdf")
+def download_current_report_pdf():
+    _require_dataset()
+
+    try:
+        payload = _build_current_report_payload()
+        filename = _report_filename(current_meta["filename"], "pdf")
+        return _export_response(payload, filename, "pdf")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Current PDF report generation failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate the PDF report right now."
+        )
+
+
+@app.get("/reports/current/excel")
+def download_current_report_excel():
+    _require_dataset()
+
+    try:
+        payload = _build_current_report_payload()
+        filename = _report_filename(current_meta["filename"], "xlsx")
+        return _export_response(payload, filename, "excel")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Current Excel report generation failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate the Excel report right now."
+        )
+
+
+@app.get("/reports/{report_id}")
+def get_report(report_id: int):
+    try:
+        return _get_stored_report(report_id)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Report lookup failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to load this report right now."
+        )
+
+
+@app.delete("/reports/{report_id}")
+def delete_report(report_id: int):
+    try:
+        _get_stored_report(report_id)
+        deleted = insight_history.delete_insight(report_id)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Report deletion failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to delete this report right now."
+        )
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Report not found.")
+
+    return {"deleted": True, "id": report_id}
+
+
+@app.get("/reports/{report_id}/pdf")
+def download_report_pdf(report_id: int):
+    try:
+        record = _get_stored_report(report_id)
+        filename = _report_filename(record["filename"], "pdf", report_id)
+        return _export_response(record["payload"], filename, "pdf")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Saved PDF report generation failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate the PDF report right now."
+        )
+
+
+@app.get("/reports/{report_id}/excel")
+def download_report_excel(report_id: int):
+    try:
+        record = _get_stored_report(report_id)
+        filename = _report_filename(record["filename"], "xlsx", report_id)
+        return _export_response(record["payload"], filename, "excel")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Saved Excel report generation failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate the Excel report right now."
+        )
 
