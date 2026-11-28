@@ -1,10 +1,60 @@
 import axios from "axios";
 
-export const API_URL = "http://127.0.0.1:8000";
+export const API_URL = import.meta.env?.VITE_API_URL || "http://127.0.0.1:8000";
+export const TOKEN_KEY = "insightai_token";
+export const UNAUTHORIZED_EVENT = "insightai:unauthorized";
 
 export const api = axios.create({
   baseURL: API_URL
 });
+
+const storage = () => {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+};
+
+export const getToken = () => storage()?.getItem(TOKEN_KEY) || null;
+
+export const setToken = (token) => {
+  try {
+    storage()?.setItem(TOKEN_KEY, token);
+  } catch {
+    return;
+  }
+};
+
+export const clearToken = () => {
+  try {
+    storage()?.removeItem(TOKEN_KEY);
+  } catch {
+    return;
+  }
+};
+
+api.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401 && getToken()) {
+      clearToken();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 export const getApiError = (error, fallback) => {
   const detail = error?.response?.data?.detail;
@@ -87,3 +137,17 @@ export const downloadReportFile = (reportId, format) =>
     `report-${reportId}.${extensionFor(format)}`,
     format
   );
+
+export const login = (email, password) =>
+  api.post("/auth/login", { email, password });
+
+export const register = (payload) => api.post("/auth/register", payload);
+
+export const fetchCurrentUser = () => api.get("/auth/me");
+
+export const updateProfile = (payload) => api.patch("/auth/profile", payload);
+
+export const changePassword = (payload) =>
+  api.post("/auth/change-password", payload);
+
+export const logout = () => api.post("/auth/logout");

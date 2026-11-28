@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api, downloadReport, getApiError } from "./api";
+import { api, downloadReport, getApiError, TOKEN_KEY } from "./api";
 
 describe("api helpers", () => {
   afterEach(() => {
@@ -66,5 +66,29 @@ describe("api helpers", () => {
     });
 
     expect(await downloadReport()).toBe("business-insights.pdf");
+  });
+
+  it("sends the stored access token as a bearer header", async () => {
+    const originalAdapter = api.defaults.adapter;
+    const adapter = vi.fn(async (config) => ({
+      data: {},
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      config
+    }));
+
+    api.defaults.adapter = adapter;
+    window.localStorage.setItem(TOKEN_KEY, "test-token");
+
+    try {
+      await api.get("/auth/me");
+      expect(adapter.mock.calls[0][0].headers.Authorization).toBe(
+        "Bearer test-token"
+      );
+    } finally {
+      window.localStorage.removeItem(TOKEN_KEY);
+      api.defaults.adapter = originalAdapter;
+    }
   });
 });

@@ -266,7 +266,7 @@ function ReportPreview({ report, onDownload, downloading }) {
   );
 }
 
-export default function ReportsPanel({ dataset }) {
+export default function ReportsPanel({ dataset, canWrite = true }) {
   const [report, setReport] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [history, setHistory] = useState([]);
@@ -419,14 +419,20 @@ export default function ReportsPanel({ dataset }) {
       )}
 
       <div className="report-actions">
-        <button
-          className="upload-button"
-          onClick={handleGenerate}
-          disabled={!dataset || generating}
-        >
-          <FileBarChart size={18} />
-          {generating ? "Generating..." : "Generate Report"}
-        </button>
+        {canWrite && (
+          <button
+            className="upload-button"
+            onClick={handleGenerate}
+            disabled={!dataset || generating}
+          >
+            <FileBarChart size={18} />
+            {generating ? "Generating..." : "Generate Report"}
+          </button>
+        )}
+
+        {!canWrite && (
+          <p className="muted-note">Viewers can browse and download reports.</p>
+        )}
 
         {report && (
           <>
@@ -516,14 +522,16 @@ export default function ReportsPanel({ dataset }) {
                           <FileSpreadsheet size={16} />
                         </button>
 
-                        <button
-                          className="icon-button danger"
-                          title="Delete report"
-                          onClick={() => handleDelete(item.id)}
-                          disabled={busyId !== null}
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        {canWrite && (
+                          <button
+                            className="icon-button danger"
+                            title="Delete report"
+                            onClick={() => handleDelete(item.id)}
+                            disabled={busyId !== null}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

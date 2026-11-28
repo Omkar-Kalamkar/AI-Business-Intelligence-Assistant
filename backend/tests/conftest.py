@@ -14,18 +14,30 @@ def isolated_db(tmp_path, monkeypatch):
     monkeypatch.setenv(
         "INSIGHTS_DB_PATH", str(tmp_path / "test_insights.db")
     )
+    monkeypatch.setenv(
+        "JWT_SECRET_KEY", "test-secret-key-at-least-32-characters-long"
+    )
+    monkeypatch.setenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60")
     yield
 
 
 @pytest.fixture(autouse=True)
 def reset_app_state():
+    import auth
     import main
 
-    main.current_df = None
-    main.current_meta = None
-    main.current_analysis = None
-    main.current_insights = None
+    main.reset_dataset_states()
+    main.app.dependency_overrides[auth.get_current_user] = lambda: {
+        "id": 1,
+        "email": "test@example.com",
+        "full_name": "Test User",
+        "role": "admin",
+        "is_active": True,
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "updated_at": "2026-01-01T00:00:00+00:00",
+    }
     yield
+    main.app.dependency_overrides.clear()
 
 
 def make_normal_df(rows=240, seed=42):

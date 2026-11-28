@@ -3,14 +3,16 @@ import json
 import logging
 import os
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi import Depends, FastAPI, UploadFile, File, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from auth import current_writer, get_current_user, router as auth_router
 from ai_assistant import answer_question
 from analytics import generate_analysis, compare_sales
 from anomaly_detection import detect_anomalies, detect_trend_anomalies
@@ -60,15 +62,30 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
-# Store the latest uploaded dataset in memory
-current_df = None
-current_meta = None
-current_analysis = None
-current_insights = None
+app.include_router(auth_router)
+
+
+@dataclass
+class DatasetState:
+    df: object = None
+    meta: dict | None = None
+    analysis: dict | None = None
+    insights: dict | None = None
+
+
+_dataset_states: dict[int, DatasetState] = {}
+
+
+def _state_for(user_id):
+    return _dataset_states.setdefault(int(user_id), DatasetState())
+
+
+def reset_dataset_states():
+    _dataset_states.clear()
 
 
 def _dataset_hash(df):
@@ -136,9 +153,11 @@ def home():
 
 
 @app.post("/upload")
-async def upload_dataset(file: UploadFile = File(...)):
-    global current_df, current_meta, current_analysis, current_insights
-
+async def upload_dataset(
+    file: UploadFile = File(...),
+    current_user=Depends(current_writer),
+):
+    state = _state_for(current_user["id"])
     filename = sanitize_filename(file.filename)
 
     try:
@@ -154,14 +173,14 @@ async def upload_dataset(file: UploadFile = File(...)):
         original_records = len(df)
         df = clean_dataset(df)
 
-        current_df = df.copy()
+        state.df = df.copy()
 
         analysis = generate_analysis(df)
-        current_analysis = analysis
-        current_insights = None
+        state.analysis = analysis
+        state.insights = None
 
         dataset_hash = _dataset_hash(df)
-        current_meta = {
+        state.meta = {
             "dataset_id": uuid.uuid4().hex,
             "filename": filename,
             "uploaded_at": datetime.now(timezone.utc).isoformat(),
@@ -175,6 +194,7 @@ async def upload_dataset(file: UploadFile = File(...)):
             kind="upload_analysis",
             dataset_hash=dataset_hash,
             record_count=int(len(df)),
+            owner_id=current_user["id"],
         )
 
         preview = json.loads(
@@ -188,8 +208,8 @@ async def upload_dataset(file: UploadFile = File(...)):
             "cleaned_records": len(df),
             "analysis": analysis,
             "preview": preview,
-            "dataset_id": current_meta["dataset_id"],
-            "uploaded_at": current_meta["uploaded_at"]
+            "dataset_id": state.meta["dataset_id"],
+            "uploaded_at": state.meta["uploaded_at"]
         }
 
     except UploadTooLarge as error:
@@ -219,9 +239,13 @@ def health():
 
 
 @app.post("/ask")
-async def ask_question(request: ChatRequest):
+async def ask_question(
+    request: ChatRequest,
+    current_user=Depends(get_current_user),
+):
+    state = _state_for(current_user["id"])
 
-    if current_df is None:
+    if state.df is None:
         raise HTTPException(
             status_code=400,
             detail="Please upload a dataset first."
@@ -229,9 +253,9 @@ async def ask_question(request: ChatRequest):
 
     try:
         answer = answer_question(
-            current_df,
+            state.df,
             request.question,
-            insights=current_insights
+            insights=state.insights
         )
 
         return {
@@ -251,9 +275,13 @@ async def ask_question(request: ChatRequest):
 
 
 @app.post("/compare")
-async def compare_dataset(request: CompareRequest):
+async def compare_dataset(
+    request: CompareRequest,
+    current_user=Depends(get_current_user),
+):
+    state = _state_for(current_user["id"])
 
-    if current_df is None:
+    if state.df is None:
         raise HTTPException(
             status_code=400,
             detail="Please upload a dataset first."
@@ -266,7 +294,7 @@ async def compare_dataset(request: CompareRequest):
             )
 
         result = compare_sales(
-            current_df,
+            state.df,
             request.dimension,
             request.item1,
             request.item2
@@ -288,19 +316,17 @@ async def compare_dataset(request: CompareRequest):
         )
 
 
-def _require_dataset():
-    if current_df is None or current_meta is None:
+def _require_dataset(state):
+    if state.df is None or state.meta is None:
         raise HTTPException(
             status_code=400,
             detail="Please upload a dataset first."
         )
 
 
-def _build_insights(save=True):
-    global current_insights
-
-    df = current_df
-    analysis = current_analysis or generate_analysis(df)
+def _build_insights(state, owner_id, save=True):
+    df = state.df
+    analysis = state.analysis or generate_analysis(df)
 
     anomalies = detect_anomalies(df)
     trends = detect_trend_anomalies(df)
@@ -315,8 +341,8 @@ def _build_insights(save=True):
     )
 
     payload = {
-        "dataset_id": current_meta["dataset_id"],
-        "filename": current_meta["filename"],
+        "dataset_id": state.meta["dataset_id"],
+        "filename": state.meta["filename"],
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "summary": analysis["summary"],
         "insights": analysis.get("insights", []),
@@ -330,16 +356,17 @@ def _build_insights(save=True):
     insight_id = None
     if save:
         saved = insight_history.save_insight(
-            filename=current_meta["filename"],
+            filename=state.meta["filename"],
             payload=payload,
             kind="business_insights",
-            dataset_hash=current_meta["dataset_hash"],
-            record_count=current_meta["record_count"],
+            dataset_hash=state.meta["dataset_hash"],
+            record_count=state.meta["record_count"],
+            owner_id=owner_id,
         )
         insight_id = saved["id"]
 
     payload["insight_id"] = insight_id
-    current_insights = payload
+    state.insights = payload
     return payload
 
 
@@ -370,11 +397,21 @@ def _report_payload_from_record(record):
 
 
 @app.get("/insights")
-def business_insights(save: bool = Query(default=True)):
-    _require_dataset()
+def business_insights(
+    save: bool = Query(default=True),
+    current_user=Depends(get_current_user),
+):
+    if save and current_user["role"] == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewers cannot save new insights.",
+        )
+
+    state = _state_for(current_user["id"])
+    _require_dataset(state)
 
     try:
-        return _build_insights(save=save)
+        return _build_insights(state, current_user["id"], save=save)
 
     except HTTPException:
         raise
@@ -388,13 +425,25 @@ def business_insights(save: bool = Query(default=True)):
 
 
 @app.get("/report")
-def download_report(save: bool = Query(default=False)):
-    _require_dataset()
+def download_report(
+    save: bool = Query(default=False),
+    current_user=Depends(get_current_user),
+):
+    if save and current_user["role"] == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewers cannot save new insights.",
+        )
+
+    state = _state_for(current_user["id"])
+    _require_dataset(state)
 
     try:
-        payload = current_insights or _build_insights(save=save)
+        payload = state.insights or _build_insights(
+            state, current_user["id"], save=save
+        )
         filename = _pdf_filename(
-            current_meta["filename"], payload.get("insight_id")
+            state.meta["filename"], payload.get("insight_id")
         )
         return _report_response(payload, filename)
 
@@ -410,9 +459,14 @@ def download_report(save: bool = Query(default=False)):
 
 
 @app.get("/report/{insight_id}")
-def download_saved_report(insight_id: int):
+def download_saved_report(
+    insight_id: int,
+    current_user=Depends(get_current_user),
+):
     try:
-        record = insight_history.get_insight(insight_id)
+        record = insight_history.get_insight(
+            insight_id, owner_id=current_user["id"]
+        )
         if record is None:
             raise HTTPException(
                 status_code=404,
@@ -437,10 +491,13 @@ def download_saved_report(insight_id: int):
 @app.get("/history")
 def history_list(
     limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0)
+    offset: int = Query(default=0, ge=0),
+    current_user=Depends(get_current_user),
 ):
     try:
-        return insight_history.list_insights(limit=limit, offset=offset)
+        return insight_history.list_insights(
+            limit=limit, offset=offset, owner_id=current_user["id"]
+        )
     except Exception:
         logger.exception("History listing failed")
         raise HTTPException(
@@ -450,9 +507,14 @@ def history_list(
 
 
 @app.get("/history/{insight_id}")
-def history_detail(insight_id: int):
+def history_detail(
+    insight_id: int,
+    current_user=Depends(get_current_user),
+):
     try:
-        result = insight_history.get_insight(insight_id)
+        result = insight_history.get_insight(
+            insight_id, owner_id=current_user["id"]
+        )
     except Exception:
         logger.exception("History detail lookup failed")
         raise HTTPException(
@@ -470,9 +532,14 @@ def history_detail(insight_id: int):
 
 
 @app.delete("/history/{insight_id}")
-def history_delete(insight_id: int):
+def history_delete(
+    insight_id: int,
+    current_user=Depends(current_writer),
+):
     try:
-        deleted = insight_history.delete_insight(insight_id)
+        deleted = insight_history.delete_insight(
+            insight_id, owner_id=current_user["id"]
+        )
     except Exception:
         logger.exception("History deletion failed")
         raise HTTPException(
@@ -489,13 +556,13 @@ def history_delete(insight_id: int):
     return {"deleted": True, "id": insight_id}
 
 
-def _build_current_report_payload(request=None):
-    insights = current_insights or _build_insights(save=True)
+def _build_current_report_payload(state, owner_id, request=None, save=True):
+    insights = state.insights or _build_insights(state, owner_id, save=save)
     return build_report_payload(
-        current_analysis,
+        state.analysis,
         insights,
-        filename=current_meta["filename"],
-        dataset_id=current_meta["dataset_id"],
+        filename=state.meta["filename"],
+        dataset_id=state.meta["dataset_id"],
         title=request.title if request else None,
         notes=request.notes if request else None,
     )
@@ -523,8 +590,8 @@ def _export_response(payload, filename, extension):
     )
 
 
-def _get_stored_report(report_id):
-    record = insight_history.get_insight(report_id)
+def _get_stored_report(report_id, owner_id):
+    record = insight_history.get_insight(report_id, owner_id=owner_id)
 
     if record is None or record.get("kind") != "business_report":
         raise HTTPException(status_code=404, detail="Report not found.")
@@ -534,17 +601,24 @@ def _get_stored_report(report_id):
 
 
 @app.post("/reports", status_code=201)
-def create_report(request: ReportRequest | None = None):
-    _require_dataset()
+def create_report(
+    request: ReportRequest | None = None,
+    current_user=Depends(current_writer),
+):
+    state = _state_for(current_user["id"])
+    _require_dataset(state)
 
     try:
-        payload = _build_current_report_payload(request)
+        payload = _build_current_report_payload(
+            state, current_user["id"], request
+        )
         saved = insight_history.save_insight(
-            filename=current_meta["filename"],
+            filename=state.meta["filename"],
             payload=payload,
             kind="business_report",
-            dataset_hash=current_meta["dataset_hash"],
-            record_count=current_meta["record_count"],
+            dataset_hash=state.meta["dataset_hash"],
+            record_count=state.meta["record_count"],
+            owner_id=current_user["id"],
         )
         result = dict(saved)
         result["report"] = payload
@@ -572,10 +646,14 @@ def create_report(request: ReportRequest | None = None):
 def list_reports(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    current_user=Depends(get_current_user),
 ):
     try:
         return insight_history.list_insights(
-            limit=limit, offset=offset, kind="business_report"
+            limit=limit,
+            offset=offset,
+            kind="business_report",
+            owner_id=current_user["id"],
         )
     except Exception:
         logger.exception("Report history listing failed")
@@ -586,12 +664,17 @@ def list_reports(
 
 
 @app.get("/reports/current/pdf")
-def download_current_report_pdf():
-    _require_dataset()
+def download_current_report_pdf(current_user=Depends(get_current_user)):
+    state = _state_for(current_user["id"])
+    _require_dataset(state)
 
     try:
-        payload = _build_current_report_payload()
-        filename = _report_filename(current_meta["filename"], "pdf")
+        payload = _build_current_report_payload(
+            state,
+            current_user["id"],
+            save=current_user["role"] != "viewer",
+        )
+        filename = _report_filename(state.meta["filename"], "pdf")
         return _export_response(payload, filename, "pdf")
     except HTTPException:
         raise
@@ -604,12 +687,17 @@ def download_current_report_pdf():
 
 
 @app.get("/reports/current/excel")
-def download_current_report_excel():
-    _require_dataset()
+def download_current_report_excel(current_user=Depends(get_current_user)):
+    state = _state_for(current_user["id"])
+    _require_dataset(state)
 
     try:
-        payload = _build_current_report_payload()
-        filename = _report_filename(current_meta["filename"], "xlsx")
+        payload = _build_current_report_payload(
+            state,
+            current_user["id"],
+            save=current_user["role"] != "viewer",
+        )
+        filename = _report_filename(state.meta["filename"], "xlsx")
         return _export_response(payload, filename, "excel")
     except HTTPException:
         raise
@@ -622,9 +710,12 @@ def download_current_report_excel():
 
 
 @app.get("/reports/{report_id}")
-def get_report(report_id: int):
+def get_report(
+    report_id: int,
+    current_user=Depends(get_current_user),
+):
     try:
-        return _get_stored_report(report_id)
+        return _get_stored_report(report_id, current_user["id"])
     except HTTPException:
         raise
     except Exception:
@@ -636,10 +727,15 @@ def get_report(report_id: int):
 
 
 @app.delete("/reports/{report_id}")
-def delete_report(report_id: int):
+def delete_report(
+    report_id: int,
+    current_user=Depends(current_writer),
+):
     try:
-        _get_stored_report(report_id)
-        deleted = insight_history.delete_insight(report_id)
+        _get_stored_report(report_id, current_user["id"])
+        deleted = insight_history.delete_insight(
+            report_id, owner_id=current_user["id"]
+        )
     except HTTPException:
         raise
     except Exception:
@@ -656,9 +752,12 @@ def delete_report(report_id: int):
 
 
 @app.get("/reports/{report_id}/pdf")
-def download_report_pdf(report_id: int):
+def download_report_pdf(
+    report_id: int,
+    current_user=Depends(get_current_user),
+):
     try:
-        record = _get_stored_report(report_id)
+        record = _get_stored_report(report_id, current_user["id"])
         filename = _report_filename(record["filename"], "pdf", report_id)
         return _export_response(record["payload"], filename, "pdf")
     except HTTPException:
@@ -672,9 +771,12 @@ def download_report_pdf(report_id: int):
 
 
 @app.get("/reports/{report_id}/excel")
-def download_report_excel(report_id: int):
+def download_report_excel(
+    report_id: int,
+    current_user=Depends(get_current_user),
+):
     try:
-        record = _get_stored_report(report_id)
+        record = _get_stored_report(report_id, current_user["id"])
         filename = _report_filename(record["filename"], "xlsx", report_id)
         return _export_response(record["payload"], filename, "excel")
     except HTTPException:

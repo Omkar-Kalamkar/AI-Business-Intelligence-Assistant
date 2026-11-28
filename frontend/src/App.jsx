@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 
 import { api, downloadReport, getApiError } from "./api";
+import { canWrite as canWriteRole, useAuth } from "./auth/authContext";
 import { money } from "./format";
 import BusinessInsights from "./components/BusinessInsights";
 import HistoryPanel from "./components/HistoryPanel";
@@ -47,6 +48,14 @@ const COLORS = [
 ];
 
 function App() {
+  const auth = useAuth();
+  const canWriteAction = auth?.user ? canWriteRole(auth.user) : true;
+
+  const handleLogout = async () => {
+    if (auth?.logout) await auth.logout();
+    window.location.assign("/login");
+  };
+
   // Dashboard states
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -98,7 +107,8 @@ function App() {
     setInsightsError("");
 
     try {
-      const response = await api.get("/insights");
+      const path = canWriteAction ? "/insights" : "/insights?save=false";
+      const response = await api.get(path);
       setInsights(response.data);
     } catch (err) {
       setInsightsError(
@@ -108,7 +118,7 @@ function App() {
       insightsRequest.current = false;
       setInsightsLoading(false);
     }
-  }, []);
+  }, [canWriteAction]);
 
   // Upload dataset
   const handleUpload = async (event) => {
@@ -343,14 +353,24 @@ function App() {
             Reports
           </p>
 
-          <p onClick={() => fileInput.current?.click()}>
-            <Upload />
-            Upload Data
-          </p>
+          {canWriteAction && (
+            <p onClick={() => fileInput.current?.click()}>
+              <Upload />
+              Upload Data
+            </p>
+          )}
         </nav>
 
         <div className="sidebar-footer">
-          AI Business Intelligence
+          {auth?.user ? (
+            <>
+              <span className="role-badge">{auth.user.role}</span>
+              <span className="sidebar-email">{auth.user.email}</span>
+              <a href="/profile">Profile</a>
+            </>
+          ) : (
+            "AI Business Intelligence"
+          )}
         </div>
 
       </aside>
@@ -399,14 +419,25 @@ function App() {
               </button>
             )}
 
-            <button
-              className="upload-button"
-              onClick={() => fileInput.current?.click()}
-              disabled={loading}
-            >
-              <Upload size={18} />
-              {loading ? "Analyzing..." : "Upload Dataset"}
-            </button>
+            {canWriteAction && (
+              <button
+                className="upload-button"
+                onClick={() => fileInput.current?.click()}
+                disabled={loading}
+              >
+                <Upload size={18} />
+                {loading ? "Analyzing..." : "Upload Dataset"}
+              </button>
+            )}
+
+            {auth?.user && (
+              <div className="user-chip">
+                <span>{auth.user.full_name || auth.user.email}</span>
+                <button className="secondary-button" onClick={handleLogout}>
+                  Log out
+                </button>
+              </div>
+            )}
           </div>
 
         </header>
@@ -608,6 +639,7 @@ function App() {
               insights={insights}
               onRefresh={fetchInsights}
               refreshing={insightsLoading}
+              showRefresh={canWriteAction}
               onDownloadReport={handleDownloadReport}
               reportLoading={reportLoading}
             />
@@ -797,10 +829,11 @@ function App() {
         <ReportsPanel
           key={data?.dataset_id || "no-dataset"}
           dataset={data}
+          canWrite={canWriteAction}
         />
 
         {/* INSIGHT HISTORY */}
-        <HistoryPanel />
+        <HistoryPanel canWrite={canWriteAction} />
 
       </main>
     </div>

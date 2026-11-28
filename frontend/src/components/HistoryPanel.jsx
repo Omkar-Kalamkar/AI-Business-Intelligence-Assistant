@@ -10,7 +10,7 @@ const KIND_LABELS = {
   business_insights: "Business insights"
 };
 
-export default function HistoryPanel() {
+export default function HistoryPanel({ canWrite = true }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -192,14 +192,16 @@ export default function HistoryPanel() {
                         <Download size={16} />
                       </button>
 
-                      <button
-                        className="icon-button danger"
-                        title="Delete insight"
-                        onClick={() => deleteInsight(item.id)}
-                        disabled={deletingId !== null}
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {canWrite && (
+                        <button
+                          className="icon-button danger"
+                          title="Delete insight"
+                          onClick={() => deleteInsight(item.id)}
+                          disabled={deletingId !== null}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
